@@ -1,0 +1,134 @@
+library(survey)
+library(Publish)
+library(DataExplorer)
+
+
+load("data/NHANES17.RData")
+ls()
+
+Vars <- c("ID", 
+          "weight", 
+          "psu", 
+          "strata", 
+          "gender", 
+          "born", 
+          "race", 
+          "bmi", 
+          "cholesterol", 
+          "diabetes")
+analytic.full.data <- analytic.with.miss[,Vars]
+
+analytic.full.data$cholesterol.bin <- ifelse(analytic.full.data$cholesterol <200, "healthy", "unhealthy")
+analytic.full.data$cholesterol <- NULL
+
+require(DataExplorer)
+plot_missing(analytic.full.data)
+
+dim(analytic.full.data)
+head(analytic.full.data$ID) # full data
+analytic.complete.case.only <- as.data.frame(na.omit(analytic.full.data))
+dim(analytic.complete.case.only)
+head(analytic.complete.case.only$ID) # complete case
+head(analytic.full.data$ID[analytic.full.data$ID %in% analytic.complete.case.only$ID])
+
+# assign missing indicator
+analytic.full.data$miss <- 1 
+# assign missing indicator = 0 if the observation is available
+analytic.full.data$miss[analytic.full.data$ID %in% analytic.complete.case.only$ID] <- 0
+
+table(analytic.full.data$miss)
+# IDs not in complete case data
+head(analytic.full.data$ID[analytic.full.data$miss==1])
+# IDs in complete case data
+head(analytic.full.data$ID[analytic.full.data$miss==0])
+
+####################
+
+#saveRDS(analytic.full.data, file = "data/NHANES17m.RDS")
+analytic.full.data <- readRDS(file = "data/NHANES17m.RDS")
+analytic.complete.case.only <- as.data.frame(na.omit(analytic.full.data))
+
+
+
+require(survey)
+require(Publish)
+model.formula <- as.formula("I(cholesterol.bin=='healthy')~
+                            diabetes+gender+born+race+bmi")
+
+
+
+table(analytic.complete.case.only$strata)
+table(analytic.complete.case.only$psu)
+table(analytic.complete.case.only$psu, analytic.complete.case.only$strata)
+table(analytic.full.data$strata)
+table(analytic.full.data$psu)
+table(analytic.full.data$psu, analytic.full.data$strata)
+
+analytic.complete.case.only2 <- analytic.complete.case.only
+rows_to_change <- analytic.complete.case.only2$strata == 134# & analytic.complete.case.only2$psu == 2
+analytic.complete.case.only2[rows_to_change, ] <- NA
+table(analytic.complete.case.only2$psu, analytic.complete.case.only2$strata)
+analytic.complete.case.only3 <- as.data.frame(na.omit(analytic.complete.case.only2))
+
+table(analytic.full.data$psu, analytic.full.data$strata)
+table(analytic.complete.case.only3$psu, analytic.complete.case.only3$strata)
+
+# Wrong 
+w.design.wrong <- svydesign(ids=~psu, 
+                            weights=~weight, 
+                            strata=~strata,
+                            data = analytic.complete.case.only3, #wrong!!
+                            nest = TRUE)
+fit0 <- svyglm(model.formula, family = quasibinomial, 
+               design = w.design.wrong) # No subset design
+publish(fit0)
+
+
+# Correct
+w.design0 <- svydesign(ids=~psu, 
+                       weights=~weight, 
+                       strata=~strata,
+                       data = analytic.full.data, 
+                       nest = TRUE)
+
+# retain only those that have complete observation / no missing
+w.design <- subset(w.design0, miss == 0 & race == 'Other' & born == "Others" & bmi < 23)# this is the subset design
+
+
+fit <- svyglm(model.formula, family = quasibinomial, 
+              design = w.design) # subset design
+publish(fit)
+
+
+
+table(analytic.full.data$strata[analytic.full.data$miss == 0])
+p1 <- subset(analytic.full.data, bmi < 14)
+dim(p1)
+table(p1$strata)
+table(p1$strata, p1$psu)
+w.designx <- svydesign(ids=~psu, 
+                       weights=~weight, 
+                       strata=~strata,
+                       data = p1, 
+                       nest = TRUE)
+model.formula <- as.formula("I(cholesterol.bin=='healthy')~
+                            diabetes+bmi+gender")
+fitx <- svyglm(model.formula, family = quasibinomial, 
+               design = w.designx) # No subset design
+publish(fitx)
+
+
+
+# Correct
+w.design0 <- svydesign(ids=~psu, 
+                       weights=~weight, 
+                       strata=~strata,
+                       data = analytic.full.data, 
+                       nest = TRUE)
+# retain only those that have complete observation / no missing
+w.design <- subset(w.design0, miss == 0 & race == 'Other' & born == "Others" & bmi < 23)# this is the subset design
+
+
+fit <- svyglm(model.formula, family = quasibinomial, 
+              design = w.design) # subset design
+publish(fit)

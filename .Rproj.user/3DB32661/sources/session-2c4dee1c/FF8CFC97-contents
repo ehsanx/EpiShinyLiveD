@@ -1,0 +1,33 @@
+# Function to check for the desired condition in a subset of data
+check_condition <- function(subset_data) {
+  # Get the list of all strata
+  all_strata <- unique(subset_data$strata)
+  
+  # Check each stratum
+  for (stratum in all_strata) {
+    # Count the observations in each PSU for this stratum
+    psu_counts <- table(subset_data$strata == stratum, subset_data$psu)
+    
+    # Check if any PSU count is 'mixed' (one zero and one non-zero)
+    if (any(rowSums(psu_counts == 0) == 1 & rowSums(psu_counts > 0) == 1)) {
+      return(FALSE)
+    }
+  }
+  
+  return(TRUE)
+}
+
+# Example condition: race == "Hispanic" & diabetes == "Yes" & bmi < 30
+subset_data <- subset(analytic.full.data, race == 'Other' & born == "Others" & bmi < 23)
+
+# Check if this subset satisfies the condition
+if (check_condition(subset_data)) {
+  print("The subset satisfies the condition: No stratum has a 'mixed' PSU count.")
+} else {
+  print("The subset does not satisfy the condition: At least one stratum has a 'mixed' PSU count.")
+}
+
+
+table(analytic.full.data$strata)
+table(subset_data$strata)
+table(subset_data$strata, subset_data$psu)
